@@ -15,6 +15,9 @@ import mne
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import joblib
+import EEGFeatures as eegf
+import tensorflow as tf
+import time
 
 ################################################################################
 #
@@ -29,6 +32,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
         print('Finding the Challenge data...')
 
     patient_ids = find_data_folders(data_folder)
+    
     num_patients = len(patient_ids)
 
     if num_patients==0:
@@ -59,34 +63,63 @@ def train_challenge_model(data_folder, model_folder, verbose):
         current_cpc = get_cpc(patient_metadata)
         cpcs.append(current_cpc)
 
-    features = np.vstack(features)
-    outcomes = np.vstack(outcomes)
-    cpcs = np.vstack(cpcs)
-
     # Train the models.
     if verbose >= 1:
         print('Training the Challenge model on the Challenge data...')
 
-    # Define parameters for random forest classifier and regressor.
-    n_estimators   = 123  # Number of trees in the forest.
-    max_leaf_nodes = 456  # Maximum number of leaf nodes in each tree.
-    random_state   = 789  # Random state; set for reproducibility.
+    # Load features, outcomes, and cpcs data
+    features = np.vstack(features)
+    outcomes = np.vstack(outcomes)
+    cpcs = np.vstack(cpcs)
+    
+    # Convert outcomes to one-hot encoded
+    num_classes = len(np.unique(outcomes))
+    outcomes_onehot = tf.keras.utils.to_categorical(outcomes, num_classes)
 
-    # Impute any missing features; use the mean value by default.
+    # Convert outcomes and cpcs to numpy
+    outcomes = np.array(outcomes)
+    cpcs = np.array(cpcs)
+
+    # Impute missing features
     imputer = SimpleImputer().fit(features)
-
-    # Train the models.
     features = imputer.transform(features)
-    outcome_model = RandomForestClassifier(
-        n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes.ravel())
-    cpc_model = RandomForestRegressor(
-        n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, cpcs.ravel())
+
+    # Define neural network parameters
+    input_shape = features.shape[1]
+    output_units = num_classes  # Change this based on your problem
+    hidden_units = 64
+
+    # Create neural network models
+    outcome_model = tf.keras.models.Sequential([
+        tf.keras.layers.Input(shape=(input_shape,)),
+        tf.keras.layers.Dense(hidden_units, activation='relu'),
+        tf.keras.layers.Dense(output_units, activation='softmax')
+    ])
+
+    cpc_model = tf.keras.models.Sequential([
+        tf.keras.layers.Input(shape=(input_shape,)),
+        tf.keras.layers.Dense(hidden_units, activation='relu'),
+        tf.keras.layers.Dense(1)  # No activation for regression
+    ])
+
+    # Compile models
+    outcome_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    cpc_model.compile(optimizer='adam', loss='mean_squared_error')
+
+    print(time.asctime(), "Begin training the model")
+    # Train neural network models
+    outcome_model.fit(features, outcomes_onehot, epochs=10, verbose=1)
+    cpc_model.fit(features, cpcs, epochs=10, verbose=1)
+    print(time.asctime(), "Done training the model")
 
     # Save the models.
+    print(time.asctime(), "Begin saving the model")
     save_challenge_model(model_folder, imputer, outcome_model, cpc_model)
 
-    if verbose >= 1:
-        print('Done.')
+    print('Done.')
+
+    # if verbose >= 1:
+    #     print('Done.')
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
@@ -100,9 +133,11 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     imputer = models['imputer']
     outcome_model = models['outcome_model']
     cpc_model = models['cpc_model']
-
+    
     # Extract features.
     features = get_features(data_folder, patient_id)
+    if features is None:
+        return None, 0, 1
     features = features.reshape(1, -1)
 
     # Impute missing data.
@@ -110,8 +145,12 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
     # Apply models to features.
     outcome = outcome_model.predict(features)[0]
-    outcome_probability = outcome_model.predict_proba(features)[0, 1]
+    outcome_probability = tf.nn.softmax(outcome, axis=0)[0].numpy()
     cpc = cpc_model.predict(features)[0]
+
+    #outcome = outcome_model.predict(features)[0]
+    #outcome_probability = outcome_model.predict_proba(features)[0, 0]
+    #cpc = cpc_model.predict(features)[0]
 
     # Ensure that the CPC score is between (or equal to) 1 and 5.
     cpc = np.clip(cpc, 1, 5)
@@ -174,30 +213,52 @@ def get_features(data_folder, patient_id):
     num_recordings = len(recording_ids)
 
     # Extract patient features.
+
     patient_features = get_patient_features(patient_metadata)
 
     # Extract EEG features.
     eeg_channels = ['F3', 'P3', 'F4', 'P4']
+
+    #eeg_channels = ['Fp1', 'F3', 'C3', 'P3', 'O1', 'Fp2', 'F4', 'C4', 'P4', 'O2',
+    #                'F7', 'T3', 'T5', 'F8', 'T4', 'T6', 'Fz', 'Cz', 'Pz', 'Fpz']
     group = 'EEG'
 
     if num_recordings > 0:
-        recording_id = recording_ids[-1]
-        recording_location = os.path.join(data_folder, patient_id, '{}_{}'.format(recording_id, group))
-        if os.path.exists(recording_location + '.hea'):
-            data, channels, sampling_frequency = load_recording_data(recording_location)
-            utility_frequency = get_utility_frequency(recording_location + '.hea')
+        all_data = []
+        # Find the max recordings
+        for idx, recording_id in enumerate(recording_ids):
+            recording_location = os.path.join(data_folder, patient_id, '{}_{}'.format(recording_id, group))
+            if os.path.exists(recording_location + '.hea'):
+                data, channels, sampling_frequency = load_recording_data(recording_location)
+                utility_frequency = get_utility_frequency(recording_location + '.hea')
 
-            if all(channel in channels for channel in eeg_channels):
-                data, channels = reduce_channels(data, channels, eeg_channels)
-                data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
-                data = np.array([data[0, :] - data[1, :], data[2, :] - data[3, :]]) # Convert to bipolar montage: F3-P3 and F4-P4
-                eeg_features = get_eeg_features(data, sampling_frequency).flatten()
-            else:
-                eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
+                if all(channel in channels for channel in eeg_channels):
+                    data, channels = reduce_channels(data, channels, eeg_channels)
+                    data = np.array([data[0, :] - data[1, :], data[2, :] - data[3, :]])
+            all_data.append(data)
+
+        def max_width(data_list):
+            ret = -np.inf
+            for data in data_list:
+                if data.shape[1] > ret:
+                    ret = data.shape[1]
+            return ret
+        
+        def resize(data_list, rows, cols):
+            ret = []
+            for data in data_list:
+                ret.append(np.resize(data, (rows, cols)))
+            return ret
+        if len(all_data) > 0:
+            width = max_width(all_data)
+            all_data = resize(all_data, all_data[0].shape[0], width)
+            data = np.dstack(all_data)
+            eeg_features = extract_eeg_features(data, sampling_frequency).flatten()
+            print(time.asctime(), ": eeg_features for", recording_ids, ": shape=", eeg_features.shape)
         else:
-            eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
+            eeg_features = float('nan') * np.ones(40) # 2 bipolar channels * 20 features / channel
     else:
-        eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
+        eeg_features = float('nan') * np.ones(40) # 2 bipolar channels * 20 features / channel
 
     # Extract ECG features.
     ecg_channels = ['ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2']
@@ -207,6 +268,7 @@ def get_features(data_folder, patient_id):
         recording_id = recording_ids[0]
         recording_location = os.path.join(data_folder, patient_id, '{}_{}'.format(recording_id, group))
         if os.path.exists(recording_location + '.hea'):
+            print('recording id is', recording_id)
             data, channels, sampling_frequency = load_recording_data(recording_location)
             utility_frequency = get_utility_frequency(recording_location + '.hea')
 
@@ -248,6 +310,13 @@ def get_patient_features(data):
     features = np.array((age, female, male, other, rosc, ohca, shockable_rhythm, ttm))
 
     return features
+
+def extract_eeg_features(data, sampling_frequency):
+    if data.ndim < 2 or data.ndim > 3:
+        raise ValueError('Data dimension not supported')
+    if data.ndim == 2:
+        data = data[..., np.newaxis]
+    return eegf.extract_all_eeg_features(data, sampling_frequency)    
 
 # Extract features from the EEG data.
 def get_eeg_features(data, sampling_frequency):
