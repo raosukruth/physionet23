@@ -3,3 +3,14 @@ scipy==1.10.1
 scikit-learn==1.2.2
 joblib==1.2.0
 mne==1.4.0
+PyWavelets==1.4.1
+pandas==2.0.3
+notebook==7.0.1
+dit==1.5
+librosa==0.10.0.post2
+statsmodels==0.14.0
+pyinform==0.2.0
+pyod==1.1.0
+tensorflow==2.13.0
+xgboost==1.7.6
+debugpy==1.6.7
