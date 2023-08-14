@@ -1,10 +1,9 @@
-# Python example code for the George B. Moody PhysioNet Challenge 2023
+# Physionet 2023 Challenge Official phase submission
 
 ## What's in this repository?
+This repository contains the python implementation for the George B. Moody Physionet Challenge 2023.
 
-This repository contains a simple example that illustrates how to format a Python entry for the George B. Moody PhysioNet Challenge 2023. We recommend that you use this repository as a template for your entry. You can remove some of the code, reuse other code, and add new code to create your entry. You do not need to use the models, features, and/or libraries in this example for your approach. We encourage a diversity of approaches for the Challenge.
-
-For this example, we implemented a random forest model with several features. This simple example is designed **not** not to perform well, so you should **not** use it as a baseline for your model's performance. You can try it by running the following commands on the Challenge training set. These commands should take a few minutes or less to run from start to finish on a recent personal computer.
+In the code, we implemented a tensorflow model with 20 features. You can try it by running the following commands on the Challenge training set. These commands should take a few minutes or less to run from start to finish on a recent personal computer.
 
 This code uses four main scripts, described below, to train and run a model for the Challenge.
 
