@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+#
+# Based on team code: https://github.com/physionetchallenges/python-example-2023
+#
+
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
 
@@ -87,18 +91,22 @@ def train_challenge_model(data_folder, model_folder, verbose):
     # Define neural network parameters
     input_shape = features.shape[1]
     output_units = num_classes  # Change this based on your problem
-    hidden_units = 64
+
+    hidden_layer_1_units = input_shape / 2
+    hidden_layer_2_units = hidden_layer_1_units / 2
 
     # Create neural network models
     outcome_model = tf.keras.models.Sequential([
         tf.keras.layers.Input(shape=(input_shape,)),
-        tf.keras.layers.Dense(hidden_units, activation='relu'),
+        tf.keras.layers.Dense(hidden_layer_1_units, activation='relu'),
+        tf.keras.layers.Dense(hidden_layer_2_units, activation='relu'),
         tf.keras.layers.Dense(output_units, activation='softmax')
     ])
 
     cpc_model = tf.keras.models.Sequential([
         tf.keras.layers.Input(shape=(input_shape,)),
-        tf.keras.layers.Dense(hidden_units, activation='relu'),
+        tf.keras.layers.Dense(hidden_layer_1_units, activation='relu'),
+        tf.keras.layers.Dense(hidden_layer_2_units, activation='relu'),
         tf.keras.layers.Dense(1)  # No activation for regression
     ])
 
@@ -108,8 +116,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     print(time.asctime(), "Begin training the model")
     # Train neural network models
-    outcome_model.fit(features, outcomes_onehot, epochs=10, verbose=1)
-    cpc_model.fit(features, cpcs, epochs=10, verbose=1)
+    outcome_model.fit(features, outcomes_onehot, epochs=500, verbose=1)
+    cpc_model.fit(features, cpcs, epochs=500, verbose=1)
     print(time.asctime(), "Done training the model")
 
     # Save the models.

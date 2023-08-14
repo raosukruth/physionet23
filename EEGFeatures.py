@@ -1,3 +1,6 @@
+#
+# Uses EEGExtract: https://github.com/physionetchallenges/python-example-2023
+#
 import EEGExtract as eeg
 import numpy as np
 
