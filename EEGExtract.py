@@ -1,5 +1,5 @@
 #
-# Based on https://github.com/physionetchallenges/python-example-2023
+# Based on https://github.com/sari-saba-sadiya/EEGExtract/tree/main
 #
 import bisect
 import numpy as np

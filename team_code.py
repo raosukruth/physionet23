@@ -22,6 +22,21 @@ import joblib
 import EEGFeatures as eegf
 import tensorflow as tf
 import time
+import os
+import numpy as np
+from multiprocessing import Pool, process
+
+def process_patient(i, data_folder, verbose, patient_ids):
+    proc = process.current_process()
+    proc._config['daemon'] = False
+    if verbose >= 2:
+        print('    {}/{}...'.format(i+1, num_patients))
+    current_features = get_features(data_folder, patient_ids[i])
+    # Extract labels.
+    patient_metadata = load_challenge_data(data_folder, patient_ids[i])
+    current_outcome = get_outcome(patient_metadata)
+    current_cpc = get_cpc(patient_metadata)
+    return current_features, current_outcome, current_cpc
 
 ################################################################################
 #
@@ -48,24 +63,12 @@ def train_challenge_model(data_folder, model_folder, verbose):
     # Extract the features and labels.
     if verbose >= 1:
         print('Extracting features and labels from the Challenge data...')
+    
+    with Pool(processes=16) as p:
+        args = [(i, data_folder, verbose, patient_ids) for i in range(num_patients)]
+        result = p.starmap(process_patient, args)
 
-    features = list()
-    outcomes = list()
-    cpcs = list()
-
-    for i in range(num_patients):
-        if verbose >= 2:
-            print('    {}/{}...'.format(i+1, num_patients))
-
-        current_features = get_features(data_folder, patient_ids[i])
-        features.append(current_features)
-
-        # Extract labels.
-        patient_metadata = load_challenge_data(data_folder, patient_ids[i])
-        current_outcome = get_outcome(patient_metadata)
-        outcomes.append(current_outcome)
-        current_cpc = get_cpc(patient_metadata)
-        cpcs.append(current_cpc)
+    features, outcomes, cpcs = zip(*result)
 
     # Train the models.
     if verbose >= 1:
@@ -124,10 +127,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
     print(time.asctime(), "Begin saving the model")
     save_challenge_model(model_folder, imputer, outcome_model, cpc_model)
 
-    print('Done.')
-
-    # if verbose >= 1:
-    #     print('Done.')
+    if verbose >= 1:
+        print('Done.')
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
@@ -180,7 +181,7 @@ def save_challenge_model(model_folder, imputer, outcome_model, cpc_model):
 # Preprocess data.
 def preprocess_data(data, sampling_frequency, utility_frequency):
     # Define the bandpass frequencies.
-    passband = [0.1, 30.0]
+    passband = [0.1, 100.0]
 
     # Promote the data to double precision because these libraries expect double precision.
     data = np.asarray(data, dtype=np.float64)
@@ -193,10 +194,12 @@ def preprocess_data(data, sampling_frequency, utility_frequency):
     data = mne.filter.filter_data(data, sampling_frequency, passband[0], passband[1], n_jobs=4, verbose='error')
 
     # Resample the data.
-    if sampling_frequency % 2 == 0:
-        resampling_frequency = 128
-    else:
-        resampling_frequency = 125
+    # if sampling_frequency % 2 == 0:
+    #     resampling_frequency = 128
+    # else:
+    #     resampling_frequency = 125
+    resampling_frequency = 256
+
     lcm = np.lcm(int(round(sampling_frequency)), int(round(resampling_frequency)))
     up = int(round(lcm / sampling_frequency))
     down = int(round(lcm / resampling_frequency))
@@ -234,30 +237,34 @@ def get_features(data_folder, patient_id):
     if num_recordings > 0:
         all_data = []
         # Find the max recordings
+        sampling_frequency = 256
+        print(time.asctime(), ": Begin extraction of eeg_features for", recording_ids)
         for idx, recording_id in enumerate(recording_ids):
             recording_location = os.path.join(data_folder, patient_id, '{}_{}'.format(recording_id, group))
             if os.path.exists(recording_location + '.hea'):
                 data, channels, sampling_frequency = load_recording_data(recording_location)
                 utility_frequency = get_utility_frequency(recording_location + '.hea')
-
+                sampling_frequency = 256
+                data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
                 if all(channel in channels for channel in eeg_channels):
                     data, channels = reduce_channels(data, channels, eeg_channels)
                     data = np.array([data[0, :] - data[1, :], data[2, :] - data[3, :]])
             all_data.append(data)
-
-        def max_width(data_list):
-            ret = -np.inf
-            for data in data_list:
-                if data.shape[1] > ret:
-                    ret = data.shape[1]
-            return ret
         
-        def resize(data_list, rows, cols):
-            ret = []
-            for data in data_list:
-                ret.append(np.resize(data, (rows, cols)))
-            return ret
         if len(all_data) > 0:
+            def max_width(data_list):
+                ret = -np.inf
+                for data in data_list:
+                    if data.shape[1] > ret:
+                        ret = data.shape[1]
+                return ret
+            
+            def resize(data_list, rows, cols):
+                ret = []
+                for data in data_list:
+                    ret.append(np.resize(data, (rows, cols)))
+                return ret
+
             width = max_width(all_data)
             all_data = resize(all_data, all_data[0].shape[0], width)
             data = np.dstack(all_data)
@@ -324,7 +331,7 @@ def extract_eeg_features(data, sampling_frequency):
         raise ValueError('Data dimension not supported')
     if data.ndim == 2:
         data = data[..., np.newaxis]
-    return eegf.extract_all_eeg_features(data, sampling_frequency)    
+    return eegf.extract_all_eeg_features(data, sampling_frequency) 
 
 # Extract features from the EEG data.
 def get_eeg_features(data, sampling_frequency):
