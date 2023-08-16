@@ -181,7 +181,7 @@ def save_challenge_model(model_folder, imputer, outcome_model, cpc_model):
 # Preprocess data.
 def preprocess_data(data, sampling_frequency, utility_frequency):
     # Define the bandpass frequencies.
-    passband = [0.1, 100.0]
+    passband = [0.5, 100.0]
 
     # Promote the data to double precision because these libraries expect double precision.
     data = np.asarray(data, dtype=np.float64)
@@ -194,11 +194,10 @@ def preprocess_data(data, sampling_frequency, utility_frequency):
     data = mne.filter.filter_data(data, sampling_frequency, passband[0], passband[1], n_jobs=4, verbose='error')
 
     # Resample the data.
-    # if sampling_frequency % 2 == 0:
-    #     resampling_frequency = 128
-    # else:
-    #     resampling_frequency = 125
-    resampling_frequency = 256
+    if sampling_frequency % 2 == 0:
+        resampling_frequency = 256
+    else:
+        resampling_frequency = 255
 
     lcm = np.lcm(int(round(sampling_frequency)), int(round(resampling_frequency)))
     up = int(round(lcm / sampling_frequency))
@@ -237,14 +236,13 @@ def get_features(data_folder, patient_id):
     if num_recordings > 0:
         all_data = []
         # Find the max recordings
-        sampling_frequency = 256
+        sampling_frequency = None
         print(time.asctime(), ": Begin extraction of eeg_features for", recording_ids)
         for idx, recording_id in enumerate(recording_ids):
             recording_location = os.path.join(data_folder, patient_id, '{}_{}'.format(recording_id, group))
             if os.path.exists(recording_location + '.hea'):
                 data, channels, sampling_frequency = load_recording_data(recording_location)
                 utility_frequency = get_utility_frequency(recording_location + '.hea')
-                sampling_frequency = 256
                 data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
                 if all(channel in channels for channel in eeg_channels):
                     data, channels = reduce_channels(data, channels, eeg_channels)
