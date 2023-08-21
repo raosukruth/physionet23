@@ -88,26 +88,29 @@ def train_challenge_model(data_folder, model_folder, verbose):
     # Define neural network architecture using TensorFlow
     input_shape = features.shape[1]
 
+    hidden_layer_1_units = input_shape / 2
+    hidden_layer_2_units = hidden_layer_1_units / 2
+
     outcome_model = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(input_shape,)),
-        tf.keras.layers.Dense(64, activation=tf.nn.relu),
-        tf.keras.layers.Dense(32, activation=tf.nn.relu),
+        tf.keras.layers.Dense(hidden_layer_1_units, activation=tf.nn.relu),
+        tf.keras.layers.Dense(hidden_layer_2_units, activation=tf.nn.relu),
         tf.keras.layers.Dense(1, activation=tf.nn.softmax)
     ])
 
     cpcs_model = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(input_shape,)),
-        tf.keras.layers.Dense(64, activation=tf.nn.relu),
-        tf.keras.layers.Dense(32, activation=tf.nn.relu),
-        tf.keras.layers.Dense(1, activation=tf.nn.softmax)
+        tf.keras.layers.Dense(hidden_layer_1_units, activation=tf.nn.relu),
+        tf.keras.layers.Dense(hidden_layer_2_units, activation=tf.nn.relu),
+        tf.keras.layers.Dense(1)
     ])
 
     outcome_model.compile(optimizer='Adam', loss='binary_crossentropy', metrics=['accuracy'])
-    cpcs_model.compile(optimizer='Adam', loss='binary_crossentropy', metrics=['accuracy'])
+    cpcs_model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
 
     # Train the model
-    outcome_model.fit(features, outcomes, epochs=1000, batch_size=32, verbose='auto') 
-    cpcs_model.fit(features, cpcs, epochs=1000, batch_size=32, verbose='auto') 
+    outcome_model.fit(features, outcomes, epochs=4000, verbose=1) 
+    cpcs_model.fit(features, cpcs, epochs=4000, verbose=1) 
 
     # Save the models.
     print(time.asctime(), "Begin saving the model")
@@ -172,7 +175,7 @@ def save_challenge_model(model_folder, imputer, outcome_model, cpc_model):
 # Preprocess data.
 def preprocess_data(data, sampling_frequency, utility_frequency):
     # Define the bandpass frequencies.
-    passband = [0.5, 100.0]
+    passband = [0.5, 99.0]
 
     # Promote the data to double precision because these libraries expect double precision.
     data = np.asarray(data, dtype=np.float64)
@@ -258,15 +261,11 @@ def get_features(data_folder, patient_id):
             all_data = resize(all_data, all_data[0].shape[0], width)
             data = np.dstack(all_data)
             eeg_features = extract_eeg_features(data, sampling_frequency).flatten()
-            print(time.asctime(), ": eeg_features for", recording_ids, ": shape=", eeg_features.shape)
         else:
-            print(patient_id, "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
             eeg_features = float('nan') * np.ones(40) # 2 bipolar channels * 20 features / channel
     else:
-        print(patient_id, "YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY")
         eeg_features = float('nan') * np.ones(40) # 2 bipolar channels * 20 features / channel
     
-
     # Extract ECG features.
     ecg_channels = ['ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2']
     group = 'ECG'
@@ -284,10 +283,8 @@ def get_features(data_folder, patient_id):
             features = get_ecg_features(data)
             ecg_features = expand_channels(features, channels, ecg_channels).flatten()
         else:
-            print(patient_id, "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")
             ecg_features = float('nan') * np.ones(10) # 5 channels * 2 features / channel
     else:
-        print(patient_id, "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW")
         ecg_features = float('nan') * np.ones(10) # 5 channels * 2 features / channel
 
     # Extract features.
