@@ -26,11 +26,6 @@ import time
 import os
 import numpy as np
 from multiprocessing import Pool, process
-from keras.optimizers import Adam
-import torch
-import torch.nn as nn
-import torch.optim as optim
-
 
 def process_patient(i, data_folder, verbose, patient_ids):
     proc = process.current_process()
@@ -38,24 +33,12 @@ def process_patient(i, data_folder, verbose, patient_ids):
     if verbose >= 2:
         print('    {}/{}...'.format(i+1, num_patients))
     current_features = get_features(data_folder, patient_ids[i])
+    
     # Extract labels.
     patient_metadata = load_challenge_data(data_folder, patient_ids[i])
     current_outcome = get_outcome(patient_metadata)
     current_cpc = get_cpc(patient_metadata)
     return current_features, current_outcome, current_cpc
-
-# Define your neural network model
-class NeuralNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(NeuralNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, output_size)
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
 
 ################################################################################
 #
@@ -63,7 +46,6 @@ class NeuralNetwork(nn.Module):
 #
 ################################################################################
 
-# Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
     # Find data files.
     if verbose >= 1:
@@ -73,7 +55,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     
     num_patients = len(patient_ids)
 
-    if num_patients==0:
+    if num_patients == 0:
         raise FileNotFoundError('No data was provided.')
 
     # Create a folder for the model if it does not already exist.
@@ -93,86 +75,47 @@ def train_challenge_model(data_folder, model_folder, verbose):
     if verbose >= 1:
         print('Training the Challenge model on the Challenge data...')
 
-    # # Filter out arrays with all NaN values
-    # filtered_features = tuple(arr for arr in features if not np.all(np.isnan(arr)))
-    
-    # # Calculate mean of non NaN values 
-    # non_nan_values = np.concatenate([arr[~np.isnan(arr)] for arr in filtered_features])
-    # mean_non_nan = np.mean(non_nan_values)
-
-    # # Replace NaN values with mean 
-    # final_filtered_features = [np.where(np.isnan(arr), mean_non_nan, arr) for arr in filtered_features]
-
-    #imputer = SimpleImputer(missing_values=np.nan, strategy='mean', fill_value=None, copy=False, add_indicator=False, keep_empty_features=False)
-    #features = imputer.fit_transform(features)
-
     # Load features, outcomes, and cpcs data
     features = np.vstack(features)
     outcomes = np.vstack(outcomes)
     cpcs = np.vstack(cpcs)
 
-    # Convert outcomes to one-hot encoded
-    num_classes = len(np.unique(outcomes))
-    outcomes_onehot = tf.keras.utils.to_categorical(outcomes, num_classes)
-
-    # Convert outcomes and cpcs to numpy
-    outcomes = np.array(outcomes)
-    cpcs = np.array(cpcs)
-
     # Impute missing features
     imputer = SimpleImputer().fit(features)
     features = imputer.transform(features)
     assert(np.isnan(features).any() == False)
-    
-    # Define neural network parameters
-    # input_shape = features.shape[1]
-    # output_units = num_classes  # Change this based on your problem
 
-    # hidden_layer_1_units = input_shape / 2
-    # hidden_layer_2_units = hidden_layer_1_units / 2
+    # Define neural network architecture using TensorFlow
+    input_shape = features.shape[1]
 
-    # # Create neural network models
-    # outcome_model = tf.keras.models.Sequential([
-    #     tf.keras.layers.Input(shape=(input_shape,)),
-    #     tf.keras.layers.Dense(hidden_layer_1_units, activation='relu'),
-    #     tf.keras.layers.Dense(output_units, activation='sigmoid')
-    # ])
+    outcome_model = tf.keras.Sequential([
+        tf.keras.layers.Input(shape=(input_shape,)),
+        tf.keras.layers.Dense(64, activation=tf.nn.relu),
+        tf.keras.layers.Dense(32, activation=tf.nn.relu),
+        tf.keras.layers.Dense(1, activation=tf.nn.softmax)
+    ])
 
-    # cpc_model = tf.keras.models.Sequential([
-    #     tf.keras.layers.Input(shape=(input_shape,)),
-    #     tf.keras.layers.Dense(hidden_layer_1_units, activation='relu'),
-    #     tf.keras.layers.Dense(hidden_layer_2_units, activation='relu'),
-    #     tf.keras.layers.Dense(1)  # No activation for regression
-    # ])
+    cpcs_model = tf.keras.Sequential([
+        tf.keras.layers.Input(shape=(input_shape,)),
+        tf.keras.layers.Dense(64, activation=tf.nn.relu),
+        tf.keras.layers.Dense(32, activation=tf.nn.relu),
+        tf.keras.layers.Dense(1, activation=tf.nn.softmax)
+    ])
 
-    # breakpoint()
+    outcome_model.compile(optimizer='Adam', loss='binary_crossentropy', metrics=['accuracy'])
+    cpcs_model.compile(optimizer='Adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-    # # Compile models
-    # optimizer = Adam(learning_rate=0.001)
-    # outcome_model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
-    # cpc_model.compile(optimizer='adam', loss='mean_squared_error')
-
-    # print(time.asctime(), "Begin training the model")
-    # # Train neural network models
-    # outcome_model.fit(features, outcomes_onehot, epochs=500, verbose=1)
-    # cpc_model.fit(features, cpcs, epochs=500, verbose=1)
-    # print(time.asctime(), "Done training the model")
-
-    # Define parameters for random forest classifier.
-    n_estimators   = 123  # Number of trees in the forest.
-    max_leaf_nodes = 45   # Maximum number of leaf nodes in each tree.
-    random_state   = 6789 # Random state; set for reproducibility.
-
-    
-    outcome_model = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes)
-    cpc_model = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, cpcs)
+    # Train the model
+    outcome_model.fit(features, outcomes, epochs=1000, batch_size=32, verbose='auto') 
+    cpcs_model.fit(features, cpcs, epochs=1000, batch_size=32, verbose='auto') 
 
     # Save the models.
     print(time.asctime(), "Begin saving the model")
-    save_challenge_model(model_folder, imputer, outcome_model, cpc_model)
+    save_challenge_model(model_folder, imputer, outcome_model, cpcs_model)
 
     if verbose >= 1:
         print('Done.')
+
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
@@ -322,6 +265,7 @@ def get_features(data_folder, patient_id):
     else:
         print(patient_id, "YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY")
         eeg_features = float('nan') * np.ones(40) # 2 bipolar channels * 20 features / channel
+    
 
     # Extract ECG features.
     ecg_channels = ['ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2']
