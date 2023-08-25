@@ -19,9 +19,11 @@ import mne
 import sklearn
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LinearRegression
 import joblib
 import EEGFeatures as eegf
 import tensorflow as tf
+from tensorflow import keras
 import time
 import os
 import numpy as np
@@ -105,8 +107,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
         tf.keras.layers.Dense(1)
     ])
 
-    outcome_model.compile(optimizer='Adam', loss='binary_crossentropy', metrics=['accuracy'])
-    cpcs_model.compile(optimizer='Adam', loss='mean_squared_error', metrics=['accuracy'])
+    outcome_model.compile(optimizer=tf.keras.optimizers.Adam(0.01), loss='binary_crossentropy', metrics=['accuracy'])
+    cpcs_model.compile(optimizer=tf.keras.optimizers.Adam(0.01), loss='mean_absolute_error', metrics=['accuracy'])
 
     # Train the model
     outcome_model.fit(features, outcomes, epochs=4000, verbose=1) 
@@ -232,6 +234,7 @@ def get_features(data_folder, patient_id):
         # Find the max recordings
         sampling_frequency = None
         print(time.asctime(), ": Begin extraction of eeg_features for", recording_ids)
+        recording_ids = [recording_ids[-1]]
         for idx, recording_id in enumerate(recording_ids):
             recording_location = os.path.join(data_folder, patient_id, '{}_{}'.format(recording_id, group))
             if os.path.exists(recording_location + '.hea'):
